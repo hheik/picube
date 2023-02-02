@@ -11,7 +11,7 @@ pub struct BitSamples {
     pub high_samples: u8,
 }
 
-pub struct HostControl {
+pub struct HostCommand {
     // skip 22: 0100 0000 0000 0011 0000 00
     pub rumble_activated_before: bool,
     pub rumble: bool,
