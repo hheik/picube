@@ -54,14 +54,23 @@ fn main() -> ! {
     );
 
     let mut led_pin = pins.led.into_push_pull_output();
+    let mut base_pin = pins.gpio19.into_push_pull_output();
 
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        base_pin.set_high();
+        for _ in 0..2 {
+            led_pin.set_high();
+            delay.delay_ms(250);
+            led_pin.set_low();
+            delay.delay_ms(250);
+        }
+        base_pin.set_low();
+        for _ in 0..4 {
+            led_pin.set_high();
+            delay.delay_ms(100);
+            led_pin.set_low();
+            delay.delay_ms(150);
+        }
     }
 }
 
