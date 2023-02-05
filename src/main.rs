@@ -4,10 +4,13 @@
 #![no_std]
 #![no_main]
 
+mod gc;
+
 use bsp::entry;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::v2::OutputPin;
+use embedded_hal::digital::v2::{OutputPin, PinState};
+use gc::*;
 use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
@@ -53,25 +56,90 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    let mut led_pin = pins.led.into_push_pull_output();
-    let mut base_pin = pins.gpio19.into_push_pull_output();
+    // let mut led1_pin = pins.led.into_push_pull_output_in_state(PinState::Low);
+    // let mut led2_pin = pins.gpio12.into_push_pull_output_in_state(PinState::High);
+    // let mut debug1_pin = pins.gpio18.into_push_pull_output_in_state(PinState::Low);
+    // let mut debug2_pin = pins.gpio19.into_push_pull_output_in_state(PinState::High);
+    let mut data_write_pin = pins.gpio17.into_push_pull_output_in_state(PinState::Low);
+    let mut data_read_pin = pins.gpio16.into_floating_input();
 
-    loop {
-        base_pin.set_high();
-        for _ in 0..2 {
-            led_pin.set_high();
-            delay.delay_ms(250);
-            led_pin.set_low();
-            delay.delay_ms(250);
+    let mut lcd_rs = pins.gpio27.into_push_pull_output();
+    let mut lcd_rw = pins.gpio26.into_push_pull_output();
+    let mut lcd_e = pins.gpio22.into_push_pull_output();
+
+    // led1_pin.set_high().unwrap();
+    delay.delay_ms(2000);
+    // led1_pin.set_low().unwrap();
+
+    const BIT_LIMIT: usize = 4 * 8 + 1;
+    let mut bit_count: usize = 0;
+    let mut frame_counter: u64 = 0;
+    // let bits: Vec<Bit> = Vec::with_capacity(BIT_LIMIT);
+    let mut bits = [Bit::Low; BIT_LIMIT];
+    'main: loop {
+        if bit_count >= BIT_LIMIT {
+            // led1_pin.set_high().unwrap();
+            // led2_pin.set_low().unwrap();
+            // delay.delay_ms(2000);
+            // led1_pin.set_low().unwrap();
+            // led2_pin.set_high().unwrap();
+            bit_count = 0;
+            continue 'main;
         }
-        base_pin.set_low();
-        for _ in 0..4 {
-            led_pin.set_high();
-            delay.delay_ms(100);
-            led_pin.set_low();
-            delay.delay_ms(150);
+        let bit = match read_bit(&data_read_pin, &mut delay) {
+            Ok(bit) => bit,
+            Err(()) => {
+                // for _ in 0..10 {
+                //     led1_pin.set_high().unwrap();
+                //     led2_pin.set_low().unwrap();
+                //     delay.delay_ms(50);
+                //     led1_pin.set_low().unwrap();
+                //     led2_pin.set_high().unwrap();
+                //     delay.delay_ms(50);
+                // }
+                bit_count = 0;
+                continue 'main;
+            }
+        };
+        bits[bit_count] = bit;
+        bit_count += 1;
+
+        if let Bit::Stop = bit {
+            if match_bit_pattern(&bits[..bit_count], &REQUEST_1) {
+                send_data(&mut data_write_pin, &mut delay, &RESPONSE_1);
+            } else if match_bit_pattern(&bits[..bit_count], &REQUEST_2) {
+                send_data(&mut data_write_pin, &mut delay, &RESPONSE_2);
+            } else if match_bit_pattern(&bits[..bit_count], &REQUEST_3) {
+                frame_counter += 1;
+                send_data(
+                    &mut data_write_pin,
+                    &mut delay,
+                    &get_input(frame_counter).into_gc_bits(),
+                )
+            } else {
+                // // debug2_pin.set_low().unwrap();
+                // // DEBUG: unknown command
+                // for i in 0..bit_count {
+                //     const US_MULT: u32 = 4;
+                //     const BLINK_INTERVAL: u32 = 100 * US_MULT;
+                //     let blink_us = match bits[i] {
+                //         Bit::High => 75,
+                //         Bit::Low => 25,
+                //         Bit::Stop => 10,
+                //         Bit::Unknown => 10,
+                //     } * US_MULT;
+                //     debug1_pin.set_high().unwrap();
+                //     led1_pin.set_high().unwrap();
+                //     delay.delay_us(blink_us);
+                //     debug1_pin.set_low().unwrap();
+                //     led1_pin.set_low().unwrap();
+                //     delay.delay_us(BLINK_INTERVAL - blink_us);
+                // }
+            }
+            // led2_pin.set_high().unwrap();
+            wait_command(&mut data_read_pin, &mut delay);
+            // led2_pin.set_low().unwrap();
+            bit_count = 0;
         }
     }
 }
-
-// End of file
